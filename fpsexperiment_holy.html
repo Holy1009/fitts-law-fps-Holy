@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fitts' Law FPS Aim Trainer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0f0f13;
+    color: #e8e8ec;
+    overflow: hidden;
+    height: 100vh;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  #topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 20px; background: #1a1a22;
+    border-bottom: 1px solid #2a2a36; font-size: 14px;
+    flex-shrink: 0; gap: 16px;
+  }
+  #topbar .stat { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  #topbar .stat-label { color: #8888a0; }
+  #topbar .stat-value { font-weight: 600; color: #6ee7b7; font-variant-numeric: tabular-nums; }
+  #topbar .stat-value.points { color: #fbbf24; }
+  #topbar .stat-value.time { color: #60a5fa; }
+
+  #stat-points-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #stat-points {
+    transition: transform 0.12s ease, color 0.12s ease;
+    display: inline-block;
+  }
+  #stat-points.pop { transform: scale(1.35); }
+
+  #points-delta {
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-left: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
+    transition: opacity 0.2s ease;
+  }
+  #points-delta.show {
+    opacity: 1;
+    animation: floatUp 0.6s ease forwards;
+  }
+  #points-delta.positive { color: #6ee7b7; }
+  #points-delta.negative { color: #ef4444; }
+
+  @keyframes floatUp {
+    0%   { transform: translateY(-50%); opacity: 1; }
+    100% { transform: translateY(-150%); opacity: 0; }
+  }
+
+  #progress-wrap {
+    flex: 1; min-width: 80px; height: 6px;
+    background: #2a2a36; border-radius: 3px; overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #6ee7b7, #60a5fa);
+    transition: width 0.15s ease;
+  }
+
+  #btn-top-download {
+    padding: 6px 14px; font-size: 12px; font-weight: 600;
+    color: #a0a0b8; background: transparent;
+    border: 1px solid #2a2a36; border-radius: 6px;
+    cursor: pointer; white-space: nowrap;
+    transition: border-color 0.12s ease, color 0.12s ease;
+  }
+  #btn-top-download:hover { border-color: #6ee7b7; color: #6ee7b7; }
+  #btn-top-download:disabled { opacity: 0.35; cursor: not-allowed; }
+  #btn-top-download:disabled:hover { border-color: #2a2a36; color: #a0a0b8; }
+
+  #canvas-wrap { flex: 1; position: relative; cursor: crosshair; }
+  canvas { display: block; }
+
+  .overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    background: rgba(15, 15, 19, 0.94);
+    backdrop-filter: blur(6px);
+    z-index: 10; text-align: center; padding: 20px; overflow-y: auto;
+  }
+  .overlay h1 {
+    font-size: 32px; margin-bottom: 12px;
+    background: linear-gradient(90deg, #6ee7b7, #60a5fa);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .overlay h2 { font-size: 24px; margin-bottom: 16px; color: #e8e8ec; }
+  .overlay p { color: #a0a0b8; max-width: 560px; line-height: 1.6; margin-bottom: 8px; font-size: 15px; }
+  .overlay .hint { font-size: 13px; color: #6a6a80; margin-top: 4px; }
+
+  button.primary {
+    margin-top: 20px; padding: 14px 44px;
+    font-size: 17px; font-weight: 600; color: #0f0f13;
+    background: linear-gradient(90deg, #6ee7b7, #60a5fa);
+    border: none; border-radius: 10px; cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  button.primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(110, 231, 183, 0.25);
+  }
+  button.primary:active { transform: translateY(0); }
+
+  button.secondary {
+    margin-top: 12px; padding: 10px 28px; font-size: 14px;
+    color: #a0a0b8; background: transparent;
+    border: 1px solid #2a2a36; border-radius: 8px; cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease;
+  }
+  button.secondary:hover { border-color: #6ee7b7; color: #6ee7b7; }
+
+  .hidden { display: none !important; }
+
+  .results-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px 32px; margin: 20px 0; font-size: 15px; min-width: 320px;
+  }
+  .results-grid .label { color: #8888a0; text-align: right; }
+  .results-grid .value { color: #e8e8ec; font-weight: 600; text-align: left; font-variant-numeric: tabular-nums; }
+
+  #toast {
+    position: fixed; bottom: 32px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #1a1a22; color: #6ee7b7;
+    padding: 12px 24px; border-radius: 8px;
+    border: 1px solid #2a2a36; font-size: 14px; font-weight: 600;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 100;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <div class="stat">
+      <span class="stat-label">Trial</span>
+      <span class="stat-value" id="stat-trial">0 / 100</span>
+    </div>
+    <div id="progress-wrap"><div id="progress-bar"></div></div>
+
+    <div class="stat" id="stat-points-wrap">
+      <span class="stat-label">Points</span>
+      <span class="stat-value points" id="stat-points">0</span>
+      <span id="points-delta"></span>
+    </div>
+
+    <div class="stat">
+      <span class="stat-label">Time</span>
+      <span class="stat-value time" id="stat-time">0.00s</span>
+    </div>
+    <button id="btn-top-download" disabled>Download CSV</button>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+
+    <!-- Start overlay: table removed -->
+    <div class="overlay" id="overlay-start">
+      <h1>Fitts' Law FPS Aim Trainer</h1>
+      <p>Click the targets as quickly and accurately as possible.</p>
+      <p><strong>Inner circle</strong> = +2 points &nbsp;·&nbsp; <strong>Outer ring</strong> = +1 point &nbsp;·&nbsp; <strong>Miss</strong> = −1 point</p>
+      <p class="hint">100 targets total · 10 difficulty configurations · randomized order</p>
+      <button class="primary" id="btn-start">Start Experiment</button>
+    </div>
+
+    <!-- End overlay: Mean MT and Trials Recorded removed -->
+    <div class="overlay hidden" id="overlay-end">
+      <h2>Experiment Complete</h2>
+      <div class="results-grid">
+        <div class="label">Total Points</div><div class="value" id="end-points">—</div>
+        <div class="label">Total Time</div><div class="value" id="end-time">—</div>
+        <div class="label">Sum of MT</div><div class="value" id="end-sum-mt">—</div>
+        <div class="label">First-click Accuracy</div><div class="value" id="end-acc">—</div>
+        <div class="label">Total Misses</div><div class="value" id="end-misses">—</div>
+      </div>
+      <button class="primary" id="btn-download">Download CSV</button>
+      <button class="secondary" id="btn-restart">Run Again</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast">CSV saved!</div>
+
+<script>
+/* ============================================================
+   CONFIGURATION
+   ============================================================ */
+const CONFIGS = [
+  { id: 1,  A: 150, W: 120 },
+  { id: 2,  A: 200, W: 100 },
+  { id: 3,  A: 300, W: 100 },
+  { id: 4,  A: 400, W: 100 },
+  { id: 5,  A: 500, W: 100 },
+  { id: 6,  A: 600, W: 100 },
+  { id: 7,  A: 500, W: 50  },
+  { id: 8,  A: 600, W: 50  },
+  { id: 9,  A: 700, W: 50  },
+  { id: 10, A: 800, W: 50  },
+];
+
+const TRIALS_PER_CONFIG = 10;
+const TOTAL_TRIALS = CONFIGS.length * TRIALS_PER_CONFIG; // 100
+
+const POINTS_INNER = 2;
+const POINTS_OUTER = 1;
+const POINTS_MISS  = -1;
+
+const INNER_RATIO = 0.45;
+const COLOR_TARGET_OUTER = '#2a2a36';
+const COLOR_TARGET_INNER = '#6ee7b7';
+const COLOR_TARGET_RING  = '#60a5fa';
+const COLOR_START_BTN    = '#fbbf24';
+
+const LS_KEY = 'fitts_fps_backup_v1';
+const INTER_TRIAL_DELAY_MS = 0;
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let canvas, ctx;
+let W_canvas, H_canvas;
+
+let trials = [];
+let currentTrialIndex = 0;
+let currentTarget = null;
+let prevPos = null;
+let trialStartTime = 0;
+let firstClickTime = null;
+let missCountThisTrial = 0;
+let innerHitsThisTrial = 0;
+let outerHitsThisTrial = 0;
+let totalClicksThisTrial = 0;
+let trialPointsThisTrial = 0;
+let trialActive = false;
+let experimentStarted = false;
+let experimentFinished = false;
+
+let data = [];
+let totalPoints = 0;
+let sessionStartTime = 0;
+
+let startButtonPos = { x: 0, y: 0 };
+let startButtonRadius = 40;
+
+/* ============================================================
+   INIT
+   ============================================================ */
+function init() {
+  canvas = document.getElementById('canvas');
+  ctx = canvas.getContext('2d');
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  buildTrialList();
+
+  document.getElementById('btn-start').addEventListener('click', startExperiment);
+  document.getElementById('btn-download').addEventListener('click', downloadCSV);
+  document.getElementById('btn-top-download').addEventListener('click', downloadCSV);
+  document.getElementById('btn-restart').addEventListener('click', () => {
+    try { localStorage.removeItem(LS_KEY); } catch (e) {}
+    location.reload();
+  });
+
+  canvas.addEventListener('mousedown', onCanvasClick);
+
+  restoreBackupIfExists();
+  render();
+}
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  const rect = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W_canvas = rect.width;
+  H_canvas = rect.height;
+
+  startButtonPos = { x: W_canvas / 2, y: H_canvas / 2 };
+
+  if (currentTarget) {
+    currentTarget.x = clamp(currentTarget.x, currentTarget.W/2 + 10, W_canvas - currentTarget.W/2 - 10);
+    currentTarget.y = clamp(currentTarget.y, currentTarget.W/2 + 10, H_canvas - currentTarget.W/2 - 10);
+  }
+  render();
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+/* ============================================================
+   BACKUP / RESTORE
+   ============================================================ */
+function restoreBackupIfExists() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      data = parsed;
+      document.getElementById('btn-top-download').disabled = false;
+    }
+  } catch (e) {
+    console.warn('Could not restore backup:', e);
+  }
+}
+
+function saveBackup() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+
+/* ============================================================
+   TRIAL LIST
+   ============================================================ */
+function buildTrialList() {
+  trials = [];
+  CONFIGS.forEach(c => {
+    for (let i = 0; i < TRIALS_PER_CONFIG; i++) {
+      trials.push({ configId: c.id, A: c.A, W: c.W });
+    }
+  });
+  for (let i = trials.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [trials[i], trials[j]] = [trials[j], trials[i]];
+  }
+}
+
+/* ============================================================
+   EXPERIMENT FLOW
+   ============================================================ */
+function startExperiment() {
+  document.getElementById('overlay-start').classList.add('hidden');
+  experimentStarted = true;
+  experimentFinished = false;
+  data = [];
+  totalPoints = 0;
+  currentTrialIndex = 0;
+
+  try { localStorage.removeItem(LS_KEY); } catch (e) {}
+
+  prevPos = { x: startButtonPos.x, y: startButtonPos.y };
+
+  spawnNextTarget();
+  updateHUD();
+}
+
+function spawnNextTarget() {
+  if (currentTrialIndex >= TOTAL_TRIALS) {
+    endExperiment();
+    return;
+  }
+
+  if (currentTrialIndex === 0) {
+    sessionStartTime = performance.now();
+  }
+
+  const trial = trials[currentTrialIndex];
+  const config = CONFIGS.find(c => c.id === trial.configId);
+  const A = config.A;
+  const W = config.W;
+
+  const pos = placeTargetAtDistance(prevPos, A, W);
+
+  currentTarget = {
+    x: pos.x,
+    y: pos.y,
+    W: W,
+    configId: config.id,
+    A_actual: dist(prevPos, pos),
+  };
+
+  missCountThisTrial = 0;
+  innerHitsThisTrial = 0;
+  outerHitsThisTrial = 0;
+  totalClicksThisTrial = 0;
+  trialPointsThisTrial = 0;
+  firstClickTime = null;
+
+  trialActive = true;
+  trialStartTime = performance.now();
+
+  updateHUD();
+  render();
+}
+
+function placeTargetAtDistance(from, A, W) {
+  const margin = W / 2 + 8;
+  const maxAttempts = 200;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const angle = Math.random() * Math.PI * 2;
+    const x = from.x + Math.cos(angle) * A;
+    const y = from.y + Math.sin(angle) * A;
+
+    if (x >= margin && x <= W_canvas - margin &&
+        y >= margin && y <= H_canvas - margin) {
+      return { x, y };
+    }
+  }
+
+  const angle = Math.random() * Math.PI * 2;
+  const x = clamp(from.x + Math.cos(angle) * A, margin, W_canvas - margin);
+  const y = clamp(from.y + Math.sin(angle) * A, margin, H_canvas - margin);
+  return { x, y };
+}
+
+/* ============================================================
+   CLICK HANDLING
+   ============================================================ */
+function onCanvasClick(e) {
+  if (!trialActive || !currentTarget) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  const dx = mx - currentTarget.x;
+  const dy = my - currentTarget.y;
+  const distToCenter = Math.sqrt(dx*dx + dy*dy);
+
+  const outerR = currentTarget.W / 2;
+  const innerR = outerR * INNER_RATIO;
+
+  totalClicksThisTrial++;
+
+  if (firstClickTime === null) {
+    firstClickTime = performance.now();
+  }
+
+  if (distToCenter <= innerR) {
+    innerHitsThisTrial++;
+    trialPointsThisTrial += POINTS_INNER;
+    totalPoints += POINTS_INNER;
+    showPointsFeedback('+' + POINTS_INNER);
+    completeTrial();
+  } else if (distToCenter <= outerR) {
+    outerHitsThisTrial++;
+    trialPointsThisTrial += POINTS_OUTER;
+    totalPoints += POINTS_OUTER;
+    showPointsFeedback('+' + POINTS_OUTER);
+    completeTrial();
+  } else {
+    missCountThisTrial++;
+    trialPointsThisTrial += POINTS_MISS;
+    totalPoints += POINTS_MISS;
+    showPointsFeedback('' + POINTS_MISS);
+    updateHUD();
+    render();
+  }
+}
+
+function completeTrial() {
+  trialActive = false;
+  const now = performance.now();
+  const mtFirstClick = firstClickTime !== null ? firstClickTime - trialStartTime : null;
+  const mtAcquisition = now - trialStartTime;
+
+  const A_actual = currentTarget.A_actual;
+  const W_actual = currentTarget.W;
+
+  const MT = mtFirstClick !== null ? mtFirstClick : mtAcquisition;
+  const ID = Math.log2(A_actual / W_actual + 1);
+
+  data.push({
+    trial_num: currentTrialIndex + 1,
+    A_px: round(A_actual, 2),
+    W_px: W_actual,
+    ID_bits: round(ID, 4),
+    MT_ms: round(MT, 1),
+    points: trialPointsThisTrial,
+    total_clicks: totalClicksThisTrial,
+  });
+
+  saveBackup();
+  document.getElementById('btn-top-download').disabled = false;
+
+  prevPos = { x: currentTarget.x, y: currentTarget.y };
+  currentTarget = null;
+  currentTrialIndex++;
+
+  updateHUD();
+
+  if (INTER_TRIAL_DELAY_MS > 0) {
+    setTimeout(() => { spawnNextTarget(); }, INTER_TRIAL_DELAY_MS);
+  } else {
+    spawnNextTarget();
+  }
+}
+
+/* ============================================================
+   POINTS FEEDBACK (in top bar)
+   ============================================================ */
+function showPointsFeedback(deltaText) {
+  const pointsEl = document.getElementById('stat-points');
+  const deltaEl = document.getElementById('points-delta');
+
+  pointsEl.classList.remove('pop');
+  void pointsEl.offsetWidth;
+  pointsEl.classList.add('pop');
+  setTimeout(() => pointsEl.classList.remove('pop'), 150);
+
+  deltaEl.textContent = deltaText;
+  deltaEl.classList.remove('show', 'positive', 'negative');
+  void deltaEl.offsetWidth;
+  if (deltaText.startsWith('-')) {
+    deltaEl.classList.add('negative');
+  } else {
+    deltaEl.classList.add('positive');
+  }
+  deltaEl.classList.add('show');
+  setTimeout(() => deltaEl.classList.remove('show'), 600);
+}
+
+/* ============================================================
+   END
+   ============================================================ */
+function endExperiment() {
+  experimentFinished = true;
+  trialActive = false;
+  currentTarget = null;
+  render();
+
+  const totalTime = (performance.now() - sessionStartTime) / 1000;
+  const sumMT = data.reduce((a,d) => a + (d.MT_ms || 0), 0);
+  const hits = data.filter(d => d.total_clicks === 1).length;
+  const firstClickAcc = data.length ? (hits / data.length) : 0;
+  const totalMisses = data.reduce((a,d) => a + Math.max(0, d.total_clicks - 1), 0);
+
+  document.getElementById('end-points').textContent = totalPoints;
+  document.getElementById('end-time').textContent = totalTime.toFixed(2) + ' s';
+  document.getElementById('end-sum-mt').textContent = (sumMT / 1000).toFixed(2) + ' s';
+  document.getElementById('end-acc').textContent = (firstClickAcc * 100).toFixed(1) + '%';
+  document.getElementById('end-misses').textContent = totalMisses;
+
+  document.getElementById('overlay-end').classList.remove('hidden');
+  document.getElementById('btn-top-download').disabled = false;
+}
+
+/* ============================================================
+   HUD
+   ============================================================ */
+function updateHUD() {
+  const displayedTrial = Math.min(
+    currentTrialIndex + (trialActive ? 1 : 0),
+    TOTAL_TRIALS
+  );
+  document.getElementById('stat-trial').textContent = `${displayedTrial} / ${TOTAL_TRIALS}`;
+  document.getElementById('stat-points').textContent = totalPoints;
+  const elapsed = experimentStarted ? (performance.now() - sessionStartTime) / 1000 : 0;
+  document.getElementById('stat-time').textContent = elapsed.toFixed(2) + 's';
+  document.getElementById('progress-bar').style.width = `${(currentTrialIndex / TOTAL_TRIALS) * 100}%`;
+}
+
+setInterval(() => { if (experimentStarted && !experimentFinished) updateHUD(); }, 100);
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function render() {
+  ctx.clearRect(0, 0, W_canvas, H_canvas);
+
+  if (!experimentStarted) {
+    drawStartButton();
+    return;
+  }
+
+  if (prevPos) {
+    ctx.beginPath();
+    ctx.arc(prevPos.x, prevPos.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(110, 231, 183, 0.4)';
+    ctx.fill();
+  }
+
+  if (currentTarget) {
+    drawTarget(currentTarget);
+  }
+}
+
+function drawStartButton() {
+  const { x, y } = startButtonPos;
+  ctx.beginPath();
+  ctx.arc(x, y, startButtonRadius, 0, Math.PI * 2);
+  ctx.fillStyle = COLOR_START_BTN;
+  ctx.fill();
+  ctx.fillStyle = '#0f0f13';
+  ctx.font = 'bold 14px system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('START', x, y);
+}
+
+function drawTarget(t) {
+  const outerR = t.W / 2;
+  const innerR = outerR * INNER_RATIO;
+
+  ctx.beginPath();
+  ctx.arc(t.x, t.y, outerR, 0, Math.PI * 2);
+  ctx.fillStyle = COLOR_TARGET_OUTER;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = COLOR_TARGET_RING;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(t.x, t.y, innerR, 0, Math.PI * 2);
+  ctx.fillStyle = COLOR_TARGET_INNER;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(t.x, t.y, 2, 0, Math.PI * 2);
+  ctx.fillStyle = '#0f0f13';
+  ctx.fill();
+}
+
+/* ============================================================
+   CSV EXPORT
+   ============================================================ */
+function downloadCSV() {
+  if (!data || data.length === 0) {
+    showToast('No data to download yet.');
+    return;
+  }
+
+  const headers = ['trial_num', 'A_px', 'W_px', 'ID_bits', 'MT_ms', 'points', 'total_clicks'];
+
+  const rows = data.map(d => headers.map(h => {
+    const v = d[h];
+    return v === undefined || v === null ? '' : v;
+  }).join(','));
+
+  const csv = [headers.join(','), ...rows].join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `fitts_law_fps_${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast('CSV saved!');
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.classList.remove('show'); }, 2000);
+}
+
+/* ============================================================
+   UTILS
+   ============================================================ */
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function round(v, d) { const f = Math.pow(10, d); return Math.round(v * f) / f; }
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
